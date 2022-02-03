@@ -6,6 +6,7 @@ The Implant is intended for RedTeam and Adversary Simulation Operations, it does
 
 - Debugger check - Very basic debugger check 
 - APIHashing   - Obfuscate IAT using API hashing
+- Dynamic API Resolving - Resolve APIs runtine with GetProcAddress()
 - RandomMutex  - Generate mutex unique to each device
 - VM Check     - Checks if its inside a virtual machine using display device names
 - BlockDLL     - Blocks non MSFT signed dlls to load and do hooking etc
