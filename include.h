@@ -28,3 +28,52 @@ typedef struct _PEB {
 	PVOID                         Reserved12[1];
 	ULONG                         SessionId;
 } PEB, * PPEB;
+
+
+// Struct Defenitions
+
+typedef uint64_t* PQWORD;
+
+typedef struct _REAL_DISPLAY_DEVICE
+{
+	DWORD cb;
+	TCHAR DeviceName[32];
+	TCHAR DeviceString[128];
+	DWORD StateFlags;
+	TCHAR DeviceID[128];
+	TCHAR DeviceKey[128];
+} REAL_DISPLAY_DEVICE;
+
+enum SYSTEM_INFORMATION_CLASS {
+	SystemExtendedProcessInformation = 57
+};
+
+typedef struct _UNICODE_STRING {
+	USHORT Length;
+	USHORT MaximumLength;
+	PWSTR  Buffer;
+} UNICODE_STRING;
+
+typedef struct _SYSTEM_PROCESS_INFO
+{
+	ULONG                   NextEntryOffset;
+	ULONG                   NumberOfThreads;
+	LARGE_INTEGER           Reserved[3];
+	LARGE_INTEGER           CreateTime;
+	LARGE_INTEGER           UserTime;
+	LARGE_INTEGER           KernelTime;
+	UNICODE_STRING          ImageName;
+	ULONG                   BasePriority;
+	HANDLE                  ProcessId;
+	HANDLE                  InheritedFromProcessId;
+}SYSTEM_PROCESS_INFO, * PSYSTEM_PROCESS_INFO;
+
+// Other internal function declarations
+
+VOID    PreChecks();
+BOOL    EnvChecks();
+VOID    AmIDebugged();
+CHAR* GetDynamicMutex();
+PWSTR   ReadEnvValue(PWSTR);
+FARPROC GetFuncAddr(PVOID, DWORD);
+DWORD   compute_hash(const void*, UINT32);
